@@ -1,0 +1,599 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, scrolledtext
+import random
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
+
+# 设置 matplotlib 支持中文显示
+plt.rcParams["font.family"] = ["SimHei"]
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+
+class EconomicTradeSimulator:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("国家贸易经济模拟器")
+        self.root.geometry("1400x800")
+        self.root.configure(bg="#f0f0f0")
+
+        # 设置随机种子以确保可重复性
+        random.seed(42)
+
+        # 初始化国家数据（保持原样）
+        self.countries = {
+            "本国": {
+                "gdp": 1000, "employment": 5000, "inflation": 2.5, "debt": 200,
+                "exports": {"汽车": 200, "电子产品": 300, "农产品": 100},
+                "imports": {"石油": 250, "机械": 200, "纺织品": 150},
+                "tariffs": {"石油": 0.1, "机械": 0.15, "纺织品": 0.2},
+                "gdp_history": [1000],
+                "employment_history": [5000],
+                "inflation_history": [2.5]
+            },
+            "美国": {
+                "gdp": 2000, "employment": 10000, "inflation": 2.0, "debt": 500,
+                "exports": {"飞机": 400, "半导体": 350, "农产品": 250},
+                "imports": {"汽车": 200, "服装": 300, "家具": 200},
+                "tariffs": {"汽车": 0.15, "服装": 0.2, "家具": 0.1},
+                "gdp_history": [2000],
+                "employment_history": [10000],
+                "inflation_history": [2.0]
+            },
+            "中国": {
+                "gdp": 1800, "employment": 12000, "inflation": 1.8, "debt": 300,
+                "exports": {"电子产品": 600, "服装": 400, "机械": 350},
+                "imports": {"石油": 400, "芯片": 300, "农产品": 200},
+                "tariffs": {"石油": 0.1, "芯片": 0.15, "农产品": 0.05},
+                "gdp_history": [1800],
+                "employment_history": [12000],
+                "inflation_history": [1.8]
+            },
+            "德国": {
+                "gdp": 800, "employment": 4000, "inflation": 1.9, "debt": 150,
+                "exports": {"汽车": 300, "机械": 250, "化工品": 200},
+                "imports": {"石油": 150, "食品": 100, "电子产品": 150},
+                "tariffs": {"石油": 0.1, "食品": 0.15, "电子产品": 0.08},
+                "gdp_history": [800],
+                "employment_history": [4000],
+                "inflation_history": [1.9]
+            },
+            "日本": {
+                "gdp": 600, "employment": 3500, "inflation": 0.5, "debt": 120,
+                "exports": {"汽车": 250, "电子产品": 200, "机械": 150},
+                "imports": {"石油": 200, "粮食": 100, "金属": 100},
+                "tariffs": {"石油": 0.1, "粮食": 0.3, "金属": 0.05},
+                "gdp_history": [600],
+                "employment_history": [3500],
+                "inflation_history": [0.5]
+            }
+        }
+
+        # 初始化游戏状态
+        self.current_country = "本国"
+        self.year = 2025
+        self.turn = 1
+        self.max_turns = 10
+
+        # 创建界面
+        self.create_widgets()
+
+        # 初始化图表
+        self.update_charts()
+
+        # 显示欢迎信息
+        self.show_welcome_message()
+
+    def show_welcome_message(self):
+        """显示欢迎信息"""
+        messagebox.showinfo(
+            "欢迎来到国家贸易经济模拟器",
+            "你将扮演一个国家的经济决策者，管理国家的对外贸易政策。\n\n"
+            "你的目标是通过优化进出口政策、设置合理关税和进行贸易谈判，提升国内经济。\n\n"
+            "每回合你可以调整关税、选择与其他国家进行贸易谈判，并观察这些决策如何影响GDP、就业和通货膨胀。\n\n"
+            f"游戏将进行{self.max_turns}回合，祝你好运！"
+        )
+
+    def create_widgets(self):
+        """创建游戏界面，政策控制放到左边，图表放在右边"""
+        # 顶部状态栏
+        status_frame = ttk.Frame(self.root)
+        status_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        # 年份和回合标签，后续会动态更新
+        self.year_label = ttk.Label(status_frame, text=f"年份: {self.year}", font=("Arial", 12, "bold"))
+        self.year_label.pack(side=tk.LEFT, padx=10)
+        self.turn_label = ttk.Label(status_frame, text=f"回合: {self.turn}/{self.max_turns}", font=("Arial", 12, "bold"))
+        self.turn_label.pack(side=tk.LEFT, padx=10)
+
+        self.turn_button = ttk.Button(status_frame, text="下一回合", command=self.next_turn)
+        self.turn_button.pack(side=tk.RIGHT, padx=10)
+
+        # 主框架：左边放“政策控制 + 国家经济数据”，右边放“图表”
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        ########################
+        # 左侧：政策控制 + 国家经济数据
+        ########################
+        left_frame = ttk.Frame(main_frame)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # ———— 左上：政策控制 ————
+        policy_frame = ttk.LabelFrame(left_frame, text="政策控制")
+        policy_frame.pack(fill=tk.BOTH, expand=False, padx=5, pady=5)
+
+        # 关税调整区域
+        tariff_frame = ttk.LabelFrame(policy_frame, text="关税调整")
+        tariff_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(tariff_frame, text="选择国家:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.country_var = tk.StringVar(value=self.current_country)
+        self.country_combo = ttk.Combobox(
+            tariff_frame,
+            textvariable=self.country_var,
+            values=list(self.countries.keys()),
+            state="readonly"
+        )
+        self.country_combo.grid(row=0, column=1, padx=5, pady=5)
+        self.country_combo.bind("<<ComboboxSelected>>", self.change_country)
+
+        ttk.Label(tariff_frame, text="选择进口商品:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        self.product_var = tk.StringVar()
+        self.product_combo = ttk.Combobox(
+            tariff_frame,
+            textvariable=self.product_var,
+            values=list(self.countries[self.current_country]["imports"].keys()),
+            state="readonly"
+        )
+        self.product_combo.grid(row=1, column=1, padx=5, pady=5)
+        self.product_combo.bind("<<ComboboxSelected>>", self.update_tariff_slider)
+
+        ttk.Label(tariff_frame, text="当前关税:").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        self.current_tariff_var = tk.StringVar(value="0%")
+        self.current_tariff_label = ttk.Label(tariff_frame, textvariable=self.current_tariff_var)
+        self.current_tariff_label.grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(tariff_frame, text="新关税 (%):").grid(row=3, column=0, padx=5, pady=5, sticky=tk.W)
+        self.tariff_scale = ttk.Scale(tariff_frame, from_=0, to=50, orient=tk.HORIZONTAL, length=180)
+        self.tariff_scale.set(10)
+        self.tariff_scale.grid(row=3, column=1, padx=5, pady=5)
+
+        ttk.Button(tariff_frame, text="调整关税", command=self.adjust_tariff).grid(row=3, column=2, padx=10, pady=5)
+
+        # 贸易谈判区域
+        negotiation_frame = ttk.LabelFrame(policy_frame, text="贸易谈判")
+        negotiation_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(negotiation_frame, text="选择谈判对象:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.negotiation_country_var = tk.StringVar()
+        self.negotiation_combo = ttk.Combobox(
+            negotiation_frame,
+            textvariable=self.negotiation_country_var,
+            values=[c for c in self.countries.keys() if c != self.current_country],
+            state="readonly"
+        )
+        self.negotiation_combo.grid(row=0, column=1, padx=5, pady=5)
+
+        ttk.Label(negotiation_frame, text="谈判策略:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        self.negotiation_strategy_var = tk.StringVar(value="降低关税")
+        ttk.Radiobutton(
+            negotiation_frame, text="降低关税",
+            variable=self.negotiation_strategy_var, value="降低关税"
+        ).grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Radiobutton(
+            negotiation_frame, text="提高关税",
+            variable=self.negotiation_strategy_var, value="提高关税"
+        ).grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Radiobutton(
+            negotiation_frame, text="自由贸易协定",
+            variable=self.negotiation_strategy_var, value="自由贸易协定"
+        ).grid(row=1, column=2, padx=5, pady=5, sticky=tk.W)
+        ttk.Radiobutton(
+            negotiation_frame, text="进口配额",
+            variable=self.negotiation_strategy_var, value="进口配额"
+        ).grid(row=2, column=2, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Button(negotiation_frame, text="开始谈判", command=self.start_negotiation).grid(row=3, column=1, padx=10, pady=5)
+
+        # 事件日志区域（放在政策控制下方）
+        event_frame = ttk.LabelFrame(policy_frame, text="事件日志")
+        event_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.event_text = scrolledtext.ScrolledText(event_frame, height=8, wrap=tk.WORD)
+        self.event_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.event_text.config(state=tk.DISABLED)
+
+        # 初始化“政策控制”里的下拉框选项
+        if self.product_combo['values']:
+            self.product_combo.current(0)
+            self.update_tariff_slider()
+        if self.negotiation_combo['values']:
+            self.negotiation_combo.current(0)
+
+        # ———— 左下：国家经济数据 ————
+        country_frame = ttk.LabelFrame(left_frame, text="国家经济数据")
+        country_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # 国家指标显示容器
+        self.stats_frame = ttk.Frame(country_frame)
+        self.stats_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.update_country_stats()
+
+        ########################
+        # 右侧：图表
+        ########################
+        right_frame = ttk.Frame(main_frame)
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        chart_frame = ttk.LabelFrame(right_frame, text="经济趋势")
+        chart_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(3, 1, figsize=(6, 8), dpi=100)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=chart_frame)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def change_country(self, event=None):
+        """切换显示的国家"""
+        self.current_country = self.country_var.get()
+        self.update_country_stats()
+
+        # 更新“关税调整”里的进口商品列表
+        imports_list = list(self.countries[self.current_country]["imports"].keys())
+        self.product_combo['values'] = imports_list
+        if imports_list:
+            self.product_combo.current(0)
+            self.update_tariff_slider()
+
+        # 更新“贸易谈判”里的可谈判对象（排除当前国家）
+        negotiation_list = [c for c in self.countries.keys() if c != self.current_country]
+        self.negotiation_combo['values'] = negotiation_list
+        if negotiation_list:
+            self.negotiation_combo.current(0)
+
+        # 更新右侧图表
+        self.update_charts()
+
+    def update_country_stats(self):
+        """更新国家统计信息显示"""
+        # 清除现有内容
+        for widget in self.stats_frame.winfo_children():
+            widget.destroy()
+
+        country_data = self.countries[self.current_country]
+
+        ttk.Label(self.stats_frame, text=f"GDP: {country_data['gdp']:.2f} (十亿)", font=("Arial", 12, "bold")).pack(anchor=tk.W, padx=5, pady=2)
+        ttk.Label(self.stats_frame, text=f"就业人数: {country_data['employment']:,} (千人)", font=("Arial", 12, "bold")).pack(anchor=tk.W, padx=5, pady=2)
+        ttk.Label(self.stats_frame, text=f"通货膨胀率: {country_data['inflation']:.2f}%", font=("Arial", 12, "bold")).pack(anchor=tk.W, padx=5, pady=2)
+        ttk.Label(self.stats_frame, text=f"国家债务: {country_data['debt']:.2f} (十亿)", font=("Arial", 12, "bold")).pack(anchor=tk.W, padx=5, pady=2)
+
+        ttk.Separator(self.stats_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=5, pady=5)
+
+        # 出口
+        ttk.Label(self.stats_frame, text="出口:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=5, pady=2)
+        export_frame = ttk.Frame(self.stats_frame)
+        export_frame.pack(fill=tk.X, padx=5, pady=2)
+        for i, (product, value) in enumerate(country_data["exports"].items()):
+            ttk.Label(export_frame, text=f"{product}:", width=15).grid(row=i // 3, column=(i % 3) * 2, sticky=tk.W)
+            ttk.Label(export_frame, text=f"{value:.2f} (十亿)").grid(row=i // 3, column=(i % 3) * 2 + 1, sticky=tk.W)
+
+        ttk.Separator(self.stats_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=5, pady=5)
+
+        # 进口
+        ttk.Label(self.stats_frame, text="进口:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=5, pady=2)
+        import_frame = ttk.Frame(self.stats_frame)
+        import_frame.pack(fill=tk.X, padx=5, pady=2)
+        for i, (product, value) in enumerate(country_data["imports"].items()):
+            ttk.Label(import_frame, text=f"{product}:", width=15).grid(row=i // 3, column=(i % 3) * 3, sticky=tk.W)
+            ttk.Label(import_frame, text=f"{value:.2f} (十亿)").grid(row=i // 3, column=(i % 3) * 3 + 1, sticky=tk.W)
+            ttk.Label(import_frame, text=f"关税: {country_data['tariffs'][product]*100:.1f}%").grid(row=i // 3, column=(i % 3) * 3 + 2, sticky=tk.W)
+
+    def update_tariff_slider(self, event=None):
+        """更新关税滑块和当前关税显示"""
+        product = self.product_var.get()
+        if product:
+            current_tariff = self.countries[self.current_country]["tariffs"][product]
+            self.current_tariff_var.set(f"{current_tariff * 100:.1f}%")
+            self.tariff_scale.set(current_tariff * 100)
+
+    def adjust_tariff(self):
+        """调整关税"""
+        product = self.product_var.get()
+        if not product:
+            return
+
+        new_tariff = self.tariff_scale.get() / 100.0
+        self.countries[self.current_country]["tariffs"][product] = new_tariff
+        self.add_event_log(f"调整{product}的进口关税至{new_tariff * 100:.1f}%")
+        self.current_tariff_var.set(f"{new_tariff * 100:.1f}%")
+        self.update_country_stats()
+        self.update_charts()
+
+    def start_negotiation(self):
+        """开始贸易谈判"""
+        target_country = self.negotiation_country_var.get()
+        strategy = self.negotiation_strategy_var.get()
+        if not target_country:
+            return
+
+        success_chance = random.uniform(0.4, 0.8)
+        is_success = random.random() < success_chance
+
+        if is_success:
+            if strategy == "降低关税":
+                products = list(self.countries[target_country]["imports"].keys())
+                selected_products = random.sample(products, min(2, len(products)))
+                for product in selected_products:
+                    current_tariff = self.countries[target_country]["tariffs"][product]
+                    new_tariff = max(0, current_tariff - random.uniform(0.05, 0.15))
+                    self.countries[target_country]["tariffs"][product] = new_tariff
+                self.add_event_log(f"与{target_country}的谈判成功！{target_country}降低了{', '.join(selected_products)}的关税。")
+
+            elif strategy == "提高关税":
+                products = list(self.countries[target_country]["imports"].keys())
+                selected_products = random.sample(products, min(2, len(products)))
+                for product in selected_products:
+                    current_tariff = self.countries[target_country]["tariffs"][product]
+                    new_tariff = min(0.5, current_tariff + random.uniform(0.05, 0.15))
+                    self.countries[target_country]["tariffs"][product] = new_tariff
+                self.add_event_log(f"与{target_country}的谈判成功！{target_country}提高了{', '.join(selected_products)}的关税。")
+
+            elif strategy == "自由贸易协定":
+                for product in self.countries[target_country]["imports"].keys():
+                    current_tariff = self.countries[target_country]["tariffs"][product]
+                    new_tariff = max(0, current_tariff - random.uniform(0.1, 0.2))
+                    self.countries[target_country]["tariffs"][product] = new_tariff
+                for product in self.countries[self.current_country]["imports"].keys():
+                    current_tariff = self.countries[self.current_country]["tariffs"][product]
+                    new_tariff = max(0, current_tariff - random.uniform(0.1, 0.2))
+                    self.countries[self.current_country]["tariffs"][product] = new_tariff
+                self.add_event_log(f"与{target_country}达成自由贸易协定！双方降低了多种商品的关税。")
+
+            else:  # 进口配额
+                products = list(self.countries[target_country]["imports"].keys())
+                selected_products = random.sample(products, min(2, len(products)))
+                self.add_event_log(f"与{target_country}的谈判成功！{target_country}为{', '.join(selected_products)}设置了进口配额。")
+        else:
+            self.add_event_log(f"与{target_country}的谈判失败！对方拒绝了我们的提议。")
+
+        self.update_country_stats()
+        self.update_charts()
+
+    def add_event_log(self, message):
+        """添加事件日志，并自动滚动到末尾"""
+        self.event_text.config(state=tk.NORMAL)
+        self.event_text.insert(tk.END, f"{message}\n")
+        self.event_text.see(tk.END)
+        self.event_text.config(state=tk.DISABLED)
+
+    def update_charts(self):
+        """更新图表"""
+        self.ax1.clear()
+        self.ax2.clear()
+        self.ax3.clear()
+
+        country_data = self.countries[self.current_country]
+        years = list(range(self.year - len(country_data["gdp_history"]) + 1, self.year + 1))
+
+        # GDP 图表
+        self.ax1.plot(years, country_data["gdp_history"], 'b-', marker='o')
+        self.ax1.set_title('GDP趋势')
+        self.ax1.set_ylabel('GDP (十亿)')
+        self.ax1.grid(True)
+
+        # 就业图表
+        self.ax2.plot(years, country_data["employment_history"], 'g-', marker='o')
+        self.ax2.set_title('就业趋势')
+        self.ax2.set_ylabel('就业人数 (千人)')
+        self.ax2.grid(True)
+
+        # 通货膨胀图表
+        self.ax3.plot(years, country_data["inflation_history"], 'r-', marker='o')
+        self.ax3.set_title('通货膨胀趋势')
+        self.ax3.set_ylabel('通货膨胀率 (%)')
+        self.ax3.set_xlabel('年份')
+        self.ax3.grid(True)
+
+        self.fig.tight_layout()
+        self.canvas.draw()
+
+    def simulate_economic_impact(self):
+        """模拟经济政策的影响"""
+        country_data = self.countries[self.current_country]
+
+        # 基础经济增长
+        base_gdp_growth = random.uniform(1.5, 3.0) / 100
+        base_employment_growth = random.uniform(0.5, 1.5) / 100
+
+        # 计算贸易平衡
+        exports_total = sum(country_data["exports"].values())
+        imports_total = sum(country_data["imports"].values())
+        trade_balance = exports_total - imports_total
+
+        # 关税对进口的影响
+        new_imports = {}
+        for product, value in country_data["imports"].items():
+            tariff = country_data["tariffs"][product]
+            impact = 1 - tariff * 2
+            impact = max(0.7, impact)
+            new_imports[product] = value * impact
+
+        # 关税对出口的影响
+        new_exports = country_data["exports"].copy()
+        for other_country_name, other_country in self.countries.items():
+            if other_country_name == self.current_country:
+                continue
+            for product, value in other_country["imports"].items():
+                if product in country_data["exports"]:
+                    tariff = other_country["tariffs"][product]
+                    impact = 1 - tariff * 1.5
+                    impact = max(0.7, impact)
+                    new_exports[product] = new_exports[product] * impact
+
+        country_data["imports"] = new_imports
+        country_data["exports"] = new_exports
+
+        # 更新 GDP
+        trade_impact = trade_balance / country_data["gdp"] * 0.5
+        gdp_growth = base_gdp_growth + trade_impact
+        new_gdp = country_data["gdp"] * (1 + gdp_growth)
+
+        # 更新就业
+        employment_impact = gdp_growth * 0.7
+        new_employment = country_data["employment"] * (1 + employment_impact)
+
+        # 更新通货膨胀
+        inflation_impact = 0
+        if trade_balance < 0:
+            inflation_impact += abs(trade_balance) / country_data["gdp"] * 0.3
+        average_tariff = sum(country_data["tariffs"].values()) / len(country_data["tariffs"])
+        inflation_impact += average_tariff * 0.5
+        new_inflation = country_data["inflation"] + inflation_impact
+        new_inflation = max(0, new_inflation)
+
+        # 更新债务
+        if trade_balance < 0:
+            country_data["debt"] += abs(trade_balance) * 0.3
+
+        # 更新各项指标和历史数据
+        country_data["gdp"] = new_gdp
+        country_data["employment"] = new_employment
+        country_data["inflation"] = new_inflation
+        country_data["gdp_history"].append(new_gdp)
+        country_data["employment_history"].append(new_employment)
+        country_data["inflation_history"].append(new_inflation)
+
+        # 记录年度经济报告
+        self.add_event_log("年度经济报告:")
+        self.add_event_log(f"GDP 增长: {gdp_growth * 100:.2f}% -> 新GDP: {new_gdp:.2f} 十亿")
+        self.add_event_log(f"就业增长: {employment_impact * 100:.2f}% -> 新就业: {new_employment:,.0f} 千人")
+        self.add_event_log(f"通货膨胀率: {new_inflation:.2f}%")
+        self.add_event_log(f"贸易平衡: {trade_balance:.2f} 十亿")
+
+    def next_turn(self):
+        """进入下一回合"""
+        if self.turn >= self.max_turns:
+            messagebox.showinfo("游戏结束", "游戏已完成所有回合！")
+            return
+
+        self.turn += 1
+        self.year += 1
+
+        self.year_label.config(text=f"年份: {self.year}")
+        self.turn_label.config(text=f"回合: {self.turn}/{self.max_turns}")
+
+        self.add_event_log(f"\n=== 第{self.turn}年 ({self.year}) ===")
+
+        self.simulate_economic_impact()
+        self.generate_random_event()
+
+        self.update_country_stats()
+        self.update_charts()
+
+        if self.turn >= self.max_turns:
+            self.check_game_end()
+
+    def generate_random_event(self):
+        """生成随机事件并处理影响"""
+        events = [
+            "全球经济繁荣，所有国家的GDP增长0.5%",
+            "全球经济衰退，所有国家的GDP下降1%",
+            f"{random.choice([c for c in self.countries if c != self.current_country])}发生技术革新，提高了其出口竞争力",
+            "国际油价大幅上涨，影响所有依赖石油进口的国家",
+            "国际油价大幅下跌，影响所有依赖石油出口的国家",
+            "全球范围内爆发贸易战，所有国家提高关税",
+            "签署了一项新的全球贸易协定，降低了大多数国家的关税",
+            f"{random.choice([c for c in self.countries if c != self.current_country])}发生政治动荡，影响其经济稳定性",
+            "新能源技术取得突破，减少了对传统能源的依赖",
+            "全球消费者偏好发生变化，某些产品的需求增加"
+        ]
+
+        event = random.choice(events)
+        self.add_event_log(f"随机事件: {event}")
+
+        if "全球经济繁荣" in event:
+            for country in self.countries.values():
+                country["gdp"] *= 1.005
+                country["gdp_history"][-1] = country["gdp"]
+        elif "全球经济衰退" in event:
+            for country in self.countries.values():
+                country["gdp"] *= 0.99
+                country["gdp_history"][-1] = country["gdp"]
+        elif "技术革新" in event:
+            idx = event.find("发生技术革新")
+            if idx != -1:
+                target_country = event[:idx]
+                if target_country in self.countries:
+                    for product in self.countries[target_country]["exports"].keys():
+                        self.countries[target_country]["exports"][product] *= 1.1
+        elif "油价上涨" in event:
+            for country in self.countries.values():
+                if "石油" in country["imports"]:
+                    country["imports"]["石油"] *= 1.2
+                    country["inflation"] += 0.5
+                    country["inflation_history"][-1] = country["inflation"]
+        elif "油价下跌" in event:
+            for country in self.countries.values():
+                if "石油" in country["imports"]:
+                    country["imports"]["石油"] *= 0.8
+                    country["inflation"] = max(0, country["inflation"] - 0.3)
+                    country["inflation_history"][-1] = country["inflation"]
+        elif "贸易战" in event:
+            for country in self.countries.values():
+                for product in country["tariffs"].keys():
+                    country["tariffs"][product] = min(0.5, country["tariffs"][product] * 1.2)
+        elif "贸易协定" in event:
+            for country in self.countries.values():
+                for product in country["tariffs"].keys():
+                    country["tariffs"][product] = max(0.05, country["tariffs"][product] * 0.8)
+        elif "政治动荡" in event:
+            idx = event.find("发生政治动荡")
+            if idx != -1:
+                target_country = event[:idx]
+                if target_country in self.countries:
+                    self.countries[target_country]["gdp"] *= 0.95
+                    self.countries[target_country]["employment"] *= 0.98
+                    self.countries[target_country]["gdp_history"][-1] = self.countries[target_country]["gdp"]
+                    self.countries[target_country]["employment_history"][-1] = self.countries[target_country]["employment"]
+
+    def check_game_end(self):
+        """检查游戏是否结束并显示结果"""
+        country_data = self.countries[self.current_country]
+
+        initial_gdp = country_data["gdp_history"][0]
+        gdp_change = (country_data["gdp"] - initial_gdp) / initial_gdp * 100
+
+        initial_employment = country_data["employment_history"][0]
+        employment_change = (country_data["employment"] - initial_employment) / initial_employment * 100
+
+        inflation_penalty = min(10, max(0, country_data["inflation"] - 2.5)) * 2
+        debt_penalty = min(20, country_data["debt"] / country_data["gdp"] * 10)
+
+        score = gdp_change * 0.6 + employment_change * 0.4 - inflation_penalty - debt_penalty
+        score = max(0, min(100, score))
+
+        if score >= 80:
+            evaluation = "优秀！你的经济政策非常成功，国家经济繁荣，人民生活水平显著提高。"
+        elif score >= 60:
+            evaluation = "良好。你的经济政策取得了一定成效，国家经济稳定发展。"
+        elif score >= 40:
+            evaluation = "一般。国家经济有一些进步，但仍面临一些挑战和问题。"
+        else:
+            evaluation = "需要改进。你的经济政策效果不佳，国家经济面临困境。"
+
+        result_message = (
+            f"游戏结束！你完成了{self.max_turns}年的经济管理。\n\n"
+            f"最终经济指标:\n"
+            f"GDP: {country_data['gdp']:.2f} 十亿 ({gdp_change:.2f}%)\n"
+            f"就业人数: {country_data['employment']:,.0f} 千人 ({employment_change:.2f}%)\n"
+            f"通货膨胀率: {country_data['inflation']:.2f}%\n"
+            f"国家债务: {country_data['debt']:.2f} 十亿\n\n"
+            f"你的总评分: {score:.1f}/100\n"
+            f"评价: {evaluation}"
+        )
+        messagebox.showinfo("游戏结果", result_message)
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = EconomicTradeSimulator(root)
+    root.mainloop()
